@@ -66,12 +66,64 @@ def base_prepare(folder, bfg, cnm, view=False):
     # TODO: ADD CODE TO PROCESS THE REMAINING DATA IN BASELINE
 
 
-def online_process(folder, ns, ns_start, cnm, view=False):
+def online_process(folder, ns, ns_start, cnm, query_rate=0.2, view=False):
+    """Implements the caiman online algorithm on baseline and on the online frames.
+            The taken in live as they populate the [folder].
+            Caiman online is initialized using the seeded or bare initialization
+            methods.
+
+
+            Args:
+
+                folder: str
+                    the folder to which the frames would be populating
+
+                ns:  str
+                    the naming scheme of image frames, e.g. "frame_{0}.tif",
+                    "{0}" is necessary for formating reasons
+
+                ns_start: int
+                    the starting frame number in the naming scheme, e.g.
+                    ns_start would be 0 if the first frame would be called
+                    "frame_0.tif"
+
+                cnm: OnAcid
+                    the OnACID object being used
+
+                query_rate: float
+                    used to calculate q_intv (query interval), which is
+                    query_rate * (1 / fr)
+                    fr: frame_rate in 'self.params.data'
+                    query interval is the sleep time between two directory
+                    check of new frames to save computation
+
+                view: boolean
+                    flag for plotting the dynamic plots of the temporal
+                    components
+
+                init_batch: int
+                    number of frames to be processed during initialization
+
+                epochs: int
+                    number of passes over the data
+
+                motion_correct: bool
+                    flag for performing motion correction
+
+                kwargs: dict
+                    additional parameters used to modify self.params.online']
+                    see options.['online'] for details
+
+            Returns:
+                self (results of caiman online)
+            """
     # TODO: ADD A LENGTH OF EXPR
     fls = cnm.params.get('data', 'fnames')
     init_batch = cnm.params.get('online', 'init_batch')
-    #epochs = cnm.params.get('online', 'epochs') TODO: NO EPOCH In online
+    epochs = cnm.params.get('online', 'epochs')
     #cnm.initialize_online()
+    # TODO: First finish processing the remaining files in baseline (fls[0]),
+    # TODO: THEN start to listen and query for all the new files
     extra_files = len(fls) - 1   # TODO: ONLINE VERSION MAY DIFFER
     init_files = 1
     t = init_batch
@@ -94,16 +146,39 @@ def online_process(folder, ns, ns_start, cnm, view=False):
         out = cv2.VideoWriter(cnm.params.get('online', 'movie_name_online'),
                               fourcc, 30.0, tuple([int(2 * x) for x in cnm.params.get('data', 'dims')]))
 
-        for file_count, ffll in enumerate(process_files):
-            print('Now processing file ' + ffll)
-            # %% file_count, ffll and init_batc taking in
-            Y_ = cm.load(ffll, subindices=slice(init_batc_iter[file_count], None, None))
+    for file_count, ffll in enumerate(process_files):
+        print('Now processing file ' + ffll)
+        # %% file_count, ffll and init_batc taking in
+        Y_ = cm.load(ffll, subindices=slice(init_batc_iter[file_count], None, None))
 
-            old_comps = cnm.N  # number of existing components
-            for frame_count, frame in enumerate(Y_):  # process each file
-                uno_proc(frame, frame_count, cnm, t, old_comps, t_online, out, max_shifts_online)
+        old_comps = cnm.N  # number of existing components
+        for frame_count, frame in enumerate(Y_):  # process each file
+            t, old_comps = uno_proc(frame, cnm, t, old_comps, t_online, out, max_shifts_online)
+            print(cnm.estimates.C_on[:, t-1]) # TODO: HERE FEEDS TO BMI
+    # %% online file processing starts
+    print('--- Now processing online files ---')
+    ns_counter = ns_start
+    exp_files = int(cnm.estimates.C_on.shape[-1] * (epochs - 1) / epochs)
+    fullns = os.path.join(folder, ns) # Full image name scheme
+    q_intv = query_rate * 1.0 / cnm.params.get('data', 'fr')  # query interval
+    # TODO: DETERMINE CASES IN WHICH EXPERIMENT WOULD TERMINATE, THEN HANDLE ACCORDINGLY, NOW ONLY Keyboard Interrupt
+    try:
+        while ns_counter < exp_files+ns_start:
+            target = fullns.format(ns_counter)
+            if os.path.exists(target):
+                frame = cm.load(target)
+                t, old_comps = uno_proc(frame, cnm, t, old_comps, t_online, out, max_shifts_online)
+                ns_counter += 1
+                print(cnm.estimates.C_on[:, t-1])  # TODO: HERE FEEDS TO BMI
+            else:
+                time.sleep(q_intv)
 
-        #cnm.Ab_epoch.append(cnm.estimates.Ab.copy()) TODO: NO EPOCH IN ONLINE
+    except KeyboardInterrupt as e:
+        print("Keyboard Interrupted!")
+        print("Warning: {}".format(e.args))
+        print("Only processed {} frames".format(t))
+
+    # %% final processing
     if cnm.params.get('online', 'normalize'):
         cnm.estimates.Ab /= 1. / cnm.img_norm.reshape(-1, order='F')[:, np.newaxis]
         cnm.estimates.Ab = csc_matrix(cnm.estimates.Ab)
@@ -130,15 +205,12 @@ def online_process(folder, ns, ns_start, cnm, view=False):
     return cnm
 
 
-def uno_proc(frame, frame_count, cnm, t, old_comps, t_online, out, max_shifts_online):
+def uno_proc(frame, cnm, t, old_comps, t_online, out, max_shifts_online):
     t_frame_start = time()
     if np.isnan(np.sum(frame)):
-        raise Exception('Frame ' + str(frame_count) +
-                        ' contains NaN')
+        raise Exception('Frame ' + str(t) + ' contains NaN')
     if t % 100 == 0:
-        print('Epoch: ' + str(iter + 1) + '. ' + str(t) +
-              ' frames have beeen processed in total. ' +
-              str(cnm.N - old_comps) +
+        print(str(t) + ' frames have been processed in total. ' + str(cnm.N - old_comps) +
               ' new components were added. Total # of components is '
               + str(cnm.estimates.Ab.shape[-1] - cnm.params.get('init', 'nb')))
         old_comps = cnm.N
@@ -271,192 +343,6 @@ def main():
 
 # %% view components
     cnm.estimates.view_components(img=Cn)
-
-
-
-def initialize_online(cnm):
-    fls = cnm.params.get('data', 'fnames')
-    opts = cnm.params.get_group('online')
-    Y = cm.load(fls[0], subindices=slice(0, opts['init_batch'],
-             None)).astype(np.float32)
-    print(Y.shape, cnm.params.get('online', 'init_batch'), cnm.params.get('online', 'minibatch_shape'))
-    ds_factor = np.maximum(opts['ds_factor'], 1)
-    if ds_factor > 1:
-        Y = Y.resize(1./ds_factor, 1./ds_factor)
-    mc_flag = cnm.params.get('online', 'motion_correct')
-    cnm.estimates.shifts = []  # store motion shifts here
-    cnm.estimates.time_new_comp = []
-    if mc_flag:
-        max_shifts_online = cnm.params.get('online', 'max_shifts_online')
-        mc = Y.motion_correct(max_shifts_online, max_shifts_online)
-        Y = mc[0].astype(np.float32)
-        cnm.estimates.shifts.extend(mc[1])
-
-    img_min = Y.min()
-
-    if cnm.params.get('online', 'normalize'):
-        Y -= img_min
-    img_norm = np.std(Y, axis=0)
-    img_norm += np.median(img_norm)  # normalize data to equalize the FOV
-    print('Size frame:' + str(img_norm.shape))
-    if cnm.params.get('online', 'normalize'):
-        Y = Y/img_norm[None, :, :]
-    if opts['show_movie']:
-        cnm.bnd_Y = np.percentile(Y,(0.001,100-0.001))
-    _, d1, d2 = Y.shape
-    print(Y.shape)
-    Yr = Y.to_2D().T        # convert data into 2D array
-    print(Yr.shape, cnm.params.get('online', 'init_batch'))
-    cnm.img_min = img_min
-    cnm.img_norm = img_norm
-    if cnm.params.get('online', 'init_method') == 'bare':
-        cnm.estimates.A, cnm.estimates.b, cnm.estimates.C, cnm.estimates.f, cnm.estimates.YrA = bare_initialization(
-                Y.transpose(1, 2, 0), gnb=cnm.params.get('init', 'nb'), k=cnm.params.get('init', 'K'),
-                gSig=cnm.params.get('init', 'gSig'), return_object=False)
-        cnm.estimates.S = np.zeros_like(cnm.estimates.C)
-        nr = cnm.estimates.C.shape[0]
-        cnm.estimates.g = np.array([-np.poly([0.9] * max(cnm.params.get('preprocess', 'p'), 1))[1:]
-                           for gg in np.ones(nr)])
-        cnm.estimates.bl = np.zeros(nr)
-        cnm.estimates.c1 = np.zeros(nr)
-        cnm.estimates.neurons_sn = np.std(cnm.estimates.YrA, axis=-1)
-        cnm.estimates.lam = np.zeros(nr)
-    elif cnm.params.get('online', 'init_method') == 'cnmf':
-        cnm = cnmf.CNMF(n_processes=1, params=cnm.params)
-        cnm.estimates.shifts = cnm.estimates.shifts
-        if cnm.params.get('patch', 'rf') is None:
-            cnm.dview = None
-            cnm.fit(np.array(Y))
-            cnm.estimates = cnm.estimates
-#                cnm.estimates.A, cnm.estimates.C, cnm.estimates.b, cnm.estimates.f,\
-#                cnm.estimates.S, cnm.estimates.YrA = cnm.estimates.A, cnm.estimates.C, cnm.estimates.b,\
-#                cnm.estimates.f, cnm.estimates.S, cnm.estimates.YrA
-
-        else:
-            f_new = mmapping.save_memmap(fls[:1], base_name='Yr', order='C',
-                                         slices=[slice(0, opts['init_batch']), None, None])
-            Yrm, dims_, T_ = mmapping.load_memmap(f_new)
-            Y = np.reshape(Yrm.T, [T_] + list(dims_), order='F')
-            cnm.fit(Y)
-            cnm.estimates = cnm.estimates
-#                cnm.estimates.A, cnm.estimates.C, cnm.estimates.b, cnm.estimates.f,\
-#                cnm.estimates.S, cnm.estimates.YrA = cnm.estimates.A, cnm.estimates.C, cnm.estimates.b,\
-#                cnm.estimates.f, cnm.estimates.S, cnm.estimates.YrA
-            if cnm.params.get('online', 'normalize'):
-                cnm.estimates.A /= cnm.img_norm.reshape(-1, order='F')[:, np.newaxis]
-                cnm.estimates.b /= cnm.img_norm.reshape(-1, order='F')[:, np.newaxis]
-                cnm.estimates.A = csc_matrix(cnm.estimates.A)
-
-    elif cnm.params.get('online', 'init_method') == 'seeded':
-        cnm.estimates.A, cnm.estimates.b, cnm.estimates.C, cnm.estimates.f, cnm.estimates.YrA = seeded_initialization(
-                Y.transpose(1, 2, 0), cnm.estimates.A, gnb=cnm.params.get('init', 'nb'), k=cnm.params.get('init', 'k'),
-                gSig=cnm.params.get('init', 'gSig'), return_object=False)
-        cnm.estimates.S = np.zeros_like(cnm.estimates.C)
-        nr = cnm.estimates.C.shape[0]
-        cnm.estimates.g = np.array([-np.poly([0.9] * max(cnm.params.get('preprocess', 'p'), 1))[1:]
-                           for gg in np.ones(nr)])
-        cnm.estimates.bl = np.zeros(nr)
-        cnm.estimates.c1 = np.zeros(nr)
-        cnm.estimates.neurons_sn = np.std(cnm.estimates.YrA, axis=-1)
-        cnm.estimates.lam = np.zeros(nr)
-    else:
-        raise Exception('Unknown initialization method!')
-    dims, Ts = get_file_size(fls)
-    dims = Y.shape[1:]
-    cnm.params.set('data', {'dims': dims})
-    T1 = np.array(Ts).sum()*cnm.params.get('online', 'epochs')
-    print("EN FIN:",Yr.shape, cnm.params.get('online', 'init_batch'))
-    cnm._prepare_object(Yr, T1)
-    if opts['show_movie']:
-        cnm.bnd_AC = np.percentile(cnm.estimates.A.dot(cnm.estimates.C),
-                                    (0.001, 100-0.005))
-        cnm.bnd_BG = np.percentile(cnm.estimates.b.dot(cnm.estimates.f),
-                                    (0.001, 100-0.001))
-    return cnm
-
-
-def bare_initialization(Y, init_batch=1000, k=1, method_init='greedy_roi', gnb=1,
-                        gSig=[5, 5], motion_flag=False, p=1,
-                        return_object=True, **kwargs):
-    """
-    Quick and dirty initialization for OnACID, bypassing CNMF entirely
-    Args:
-        Y               movie object or np.array
-                        matrix of data
-
-        init_batch      int
-                        number of frames to process
-
-        method_init     string
-                        initialization method
-
-        k               int
-                        number of components to find
-
-        gnb             int
-                        number of background components
-
-        gSig            [int,int]
-                        half-size of component
-
-        motion_flag     bool
-                        also perform motion correction
-
-    Output:
-        cnm_init    object
-                    caiman CNMF-like object to initialize OnACID
-    """
-
-    if Y.ndim == 4:  # 3D data
-        Y = Y[:, :, :, :init_batch]
-    else:
-        Y = Y[:, :, :init_batch]
-
-    Ain, Cin, b_in, f_in, center = initialize_components(
-        Y, K=k, gSig=gSig, nb=gnb, method_init=method_init)
-    Ain = coo_matrix(Ain)
-    b_in = np.array(b_in)
-    Yr = np.reshape(Y, (Ain.shape[0], Y.shape[-1]), order='F')
-    nA = (Ain.power(2).sum(axis=0))
-    nr = nA.size
-
-    YA = spdiags(old_div(1., nA), 0, nr, nr) * \
-        (Ain.T.dot(Yr) - (Ain.T.dot(b_in)).dot(f_in))
-    AA = spdiags(old_div(1., nA), 0, nr, nr) * (Ain.T.dot(Ain))
-    YrA = YA - AA.T.dot(Cin)
-    if return_object:
-        cnm_init = cm.source_extraction.cnmf.cnmf.CNMF(2, k=k, gSig=gSig, Ain=Ain, Cin=Cin, b_in=np.array(
-            b_in), f_in=f_in, method_init=method_init, p=p, gnb=gnb, **kwargs)
-
-        cnm_init.estimates.A, cnm_init.estimates.C, cnm_init.estimates.b, cnm_init.estimates.f, cnm_init.estimates.S,\
-            cnm_init.estimates.YrA = Ain, Cin, b_in, f_in, np.maximum(np.atleast_2d(Cin), 0), YrA
-
-        #cnm_init.g = np.array([-np.poly([0.9]*max(p,1))[1:] for gg in np.ones(k)])
-        cnm_init.estimates.g = np.array([-np.poly([0.9, 0.5][:max(1, p)])[1:]
-                               for gg in np.ones(k)])
-        cnm_init.estimates.bl = np.zeros(k)
-        cnm_init.estimates.c1 = np.zeros(k)
-        cnm_init.estimates.neurons_sn = np.std(YrA, axis=-1)
-        cnm_init.estimates.lam = np.zeros(k)
-        cnm_init.dims = Y.shape[:-1]
-        cnm_init.params.set('online', {'init_batch': init_batch})
-
-        return cnm_init
-    else:
-        return Ain, np.array(b_in), Cin, f_in, YrA
-
-
-def old_div(a, b):
-    """
-    Equivalent to ``a / b`` on Python 2 without ``from __future__ import
-    division``.
-
-    TODO: generalize this to other objects (like arrays etc.)
-    """
-    if isinstance(a, numbers.Integral) and isinstance(b, numbers.Integral):
-        return a // b
-    else:
-        return a / b
 
 
 if __name__ == "__main__":
