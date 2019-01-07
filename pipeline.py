@@ -14,7 +14,7 @@ import numpy as np
 import os, time
 import scipy
 import cv2
-from .utils import counter_int, second_to_hmt
+from utils import counter_int, second_to_hmt
 
 # Caiman Modules
 import caiman as cm
@@ -35,9 +35,11 @@ def base_prepare(folder, bfg, cnm, view=False):
     bp0 = time.time() # SET Breakpoint
     bp1 = bp0
     counter = 0
-    while True:
+    eflag = False
+    while not eflag:
         time.sleep(0.1) # Let thread sleep for certain intervals to
         bp2 = time.time()
+
         if (bp2 - bp1) > counter_int:
             print("Time Since Start: {} minutes", counter_int)  # MORE DETAILED TIMER LATER
             counter += 1
@@ -47,8 +49,9 @@ def base_prepare(folder, bfg, cnm, view=False):
             if f.find(bfg) != -1:
                 fnames = [os.path.join(folder, f)]
                 cnm.params.change_params({"fnames": fnames})
+                eflag = True
                 break
-
+    print("Starting Initializing Online")
     cnm.initialize_online()
     dur = time.time() - bp0
     ha, ma, sa = second_to_hmt(bp2-bp0)
@@ -121,6 +124,7 @@ def online_process(folder, ns, ns_start, cnm, query_rate=0.2, view=False):
     fls = cnm.params.get('data', 'fnames')
     init_batch = cnm.params.get('online', 'init_batch')
     epochs = cnm.params.get('online', 'epochs')
+    out = None
     #cnm.initialize_online()
     # TODO: First finish processing the remaining files in baseline (fls[0]),
     # TODO: THEN start to listen and query for all the new files
@@ -154,7 +158,7 @@ def online_process(folder, ns, ns_start, cnm, query_rate=0.2, view=False):
         old_comps = cnm.N  # number of existing components
         for frame_count, frame in enumerate(Y_):  # process each file
             t, old_comps = uno_proc(frame, cnm, t, old_comps, t_online, out, max_shifts_online)
-            print(cnm.estimates.C_on[:, t-1]) # TODO: HERE FEEDS TO BMI
+            temp = cnm.estimates.C_on[cnm.params.get('init', 'nb'):cnm.M, t-1] # TODO: HERE FEEDS TO BMI
     # %% online file processing starts
     print('--- Now processing online files ---')
     ns_counter = ns_start
@@ -169,8 +173,10 @@ def online_process(folder, ns, ns_start, cnm, query_rate=0.2, view=False):
                 frame = cm.load(target)
                 t, old_comps = uno_proc(frame, cnm, t, old_comps, t_online, out, max_shifts_online)
                 ns_counter += 1
-                print(cnm.estimates.C_on[:, t-1])  # TODO: HERE FEEDS TO BMI
+                temp = cnm.estimates.C_on[cnm.params.get('init', 'nb'):cnm.M, t-1]  # TODO: HERE FEEDS TO BMI
+                print(temp.shape)
             else:
+                print("Waiting for new file, {}".format(target))
                 time.sleep(q_intv)
 
     except KeyboardInterrupt as e:
@@ -206,7 +212,7 @@ def online_process(folder, ns, ns_start, cnm, query_rate=0.2, view=False):
 
 
 def uno_proc(frame, cnm, t, old_comps, t_online, out, max_shifts_online):
-    t_frame_start = time()
+    t_frame_start = time.time()
     if np.isnan(np.sum(frame)):
         raise Exception('Frame ' + str(t) + ' contains NaN')
     if t % 100 == 0:
@@ -221,7 +227,7 @@ def uno_proc(frame, cnm, t, old_comps, t_online, out, max_shifts_online):
 
     if cnm.params.get('online', 'normalize'):
         frame_ -= cnm.img_min  # make data non-negative
-    t_mot = time()
+    t_mot = time.time()
     if cnm.params.get('online', 'motion_correct'):  # motion correct
         templ = cnm.estimates.Ab.dot(
             cnm.estimates.C_on[:cnm.M, t - 1]).reshape(cnm.params.get('data', 'dims'),
@@ -245,7 +251,7 @@ def uno_proc(frame, cnm, t, old_comps, t_online, out, max_shifts_online):
     else:
         templ = None
         frame_cor = frame_
-    cnm.t_motion.append(time() - t_mot)
+    cnm.t_motion.append(time.time() - t_mot)
 
     if cnm.params.get('online', 'normalize'):
         frame_cor = frame_cor / cnm.img_norm
@@ -264,7 +270,7 @@ def uno_proc(frame, cnm, t, old_comps, t_online, out, max_shifts_online):
         if cv2.waitKey(1) & 0xFF == ord('q'):
             return None, None
     t += 1
-    t_online.append(time() - t_frame_start)
+    t_online.append(time.time() - t_frame_start)
     return t, old_comps
 
 
@@ -277,7 +283,7 @@ def main():
     data0, data1 = os.path.join(data_root, "data0"), os.path.join(data_root, "data1")
     logfile = os.path.join(data_root, "online.log")
     bas_tif, bigtif, petitif = 'base.tif', 'bigtif.tif', 'petitif.tif'
-    base_flag, ext, frame_ns = "base", 'tif', "{}.tif"
+    base_flag, ext, frame_ns = "base.tif", 'tif', "{}.tiff"
     folder = data1
 
     logging.basicConfig(format=
@@ -302,10 +308,10 @@ def main():
     rval_thr = 0.9  # soace correlation threshold for candidate components
     # set up some additional supporting parameters needed for the algorithm
     # (these are default values but can change depending on dataset properties)
-    init_batch = 200  # number of frames for initialization (presumably from the first file)
+    init_batch = 500  # number of frames for initialization (presumably from the first file)
     K = 2  # initial number of components
-    epochs = 2  # number of passes over the data
-    show_movie = False # show the movie as the data gets processed
+    epochs = 9  # number of passes over the data
+    show_movie = True # show the movie as the data gets processed
 
     params_dict = {'fr': fr,
                    'decay_time': decay_time,
@@ -333,6 +339,7 @@ def main():
 
     cnm = cnmf.online_cnmf.OnACID(params=opts)
     base_prepare(folder, base_flag, cnm)
+    online_process(data1, frame_ns, 1000, cnm)
 
 
 # %% plot contours
