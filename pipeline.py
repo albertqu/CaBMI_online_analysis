@@ -498,13 +498,17 @@ def random_test():
     return cnm
 
 
-def cnm_benchmark(cnm, data_root, folder):
+def cnm_benchmark(cnm, data_root, folder, **kwargs):
     consistency = os.path.join(data_root, 'analysis_data/onacid_consistency')
     performance = os.path.join(data_root, 'analysis_data/onacid_performance')
     import h5py
     #fp = h5py.File(os.path.join(performance, 'onacid_{}_seed{}.hdf5'.format(folder.split('/')[-2], randseed)),
     # mode='a')
-    fp = h5py.File(os.path.join(performance, 'onacid_{}.hdf5'.format(folder.split('/')[-2])), mode='a')
+    if 'saveopt' in kwargs:
+        savefil = 'onacid_{}_{}.hdf5'.format(folder.split('/')[-1],  kwargs['saveopt'])
+    else:
+        opt = 'onacid_{}.hdf5'.format(folder.split('/')[-1])
+    fp = h5py.File(os.path.join(performance, ), mode='a')
     fp.create_dataset('comp_upd', data=cnm.comp_upd)
     fp.create_dataset('t_online', data=cnm.t_online)
     fp.create_dataset('t_shapes', data=cnm.t_shapes)
@@ -543,6 +547,7 @@ def demo():
     online_process(fullseries, frame_ns, 0, cnm)
     #np.save(os.path.join(basedir, 'online_seed_{}.npy'.format(randSeed)), cnm.estimates.C)
     cnm_benchmark(cnm, data_root, fullseries)
+    close_online(cnm, os.path.join(basedir, 'cnm_fullseries2.pkl'))
 
 
 # %% plot contours
