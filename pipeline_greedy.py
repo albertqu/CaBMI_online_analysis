@@ -17,6 +17,7 @@ import os, time, copy
 import scipy
 import matplotlib.pyplot as plt
 import cv2
+import SETTINGS
 from scipy.sparse import csc_matrix
 from utils import counter_int, second_to_hmt
 from BMI_acq import set_up_bmi, baselineSimulation
@@ -158,6 +159,7 @@ def base_prepare(folder, bfg, cnm, view=False):
     bp1 = bp0
     counter = 0
     eflag = False
+    fnames = []
     while not eflag:
         time.sleep(0.1)  # Let thread sleep for certain intervals to
         bp2 = time.time()
@@ -168,10 +170,11 @@ def base_prepare(folder, bfg, cnm, view=False):
         for f in os.listdir(folder):
             # When baseline found, terminate the querying and start initial processing
             if f.find(bfg) != -1:
-                fnames = [os.path.join(folder, f)]
-                cnm.params.change_params({"fnames": fnames})
+                fnames.append(os.path.join(folder, f))
                 eflag = True
                 break
+    if len(fnames) > 1:
+        pass
     print("Starting Initializing Online")
     cnm.initialize_online()
     fls = cnm.params.get('data', 'fnames')
@@ -686,7 +689,7 @@ def vis_neuron(sigs, seq=None, save=False):
 
 
 def random_test():
-    data_root = "/Users/albertqu/Documents/7.Research/BMI"
+    data_root = SETTINGS.data_root
     data0, data1 = os.path.join(data_root, "data0"), os.path.join(data_root, "data1")
     fullseries = os.path.join(data_root, 'full_series2')
     logfile = os.path.join(data_root, "online.log")
