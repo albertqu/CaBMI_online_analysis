@@ -28,15 +28,24 @@ def split_to_series(filename, destF, seq=(0,), ns='online_{}.tiff', numplanes=6)
                           ims.asarray(i * numplanes + j), plugin='tifffile')
 
 
-def merge_tiffs(fls, outpath, tifn='bigtif.tif'):
+def merge_tiffs(fls, outpath, num=1, tifn='bigtif{}.tif'):
     # Takes in a list of single tiff fls and save them in memmap
     tifn = os.path.join(outpath, tifn)
     imgs = tifffile.TiffSequence(fls)
     totlen = imgs.shape[0]
     #dims = imgs.imread(imgs.files[0]).shape
-
-    with TiffWriter(tifn, bigtiff=True) as tif:
-        for i in range(totlen):
-            tif.save(imgs.imread(imgs.files[i]), compress=6)
+    chunklen = totlen // num
+    fnames = []
+    for j in range(num):
+        fname = tifn.format(num)
+        with TiffWriter(fname, bigtiff=True) as tif:
+            fnames.append(fname)
+            for i in range(chunklen):
+                pointer = i + chunklen * j
+                if pointer >= totlen:
+                    break
+                else:
+                    tif.save(imgs.imread(imgs.files[pointer]), compress=6)
+    return fnames
 
 

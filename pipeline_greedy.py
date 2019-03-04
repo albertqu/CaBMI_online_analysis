@@ -17,6 +17,7 @@ import os, time, copy
 import scipy
 import matplotlib.pyplot as plt
 import cv2
+from data_proc import merge_tiffs
 import SETTINGS
 from scipy.sparse import csc_matrix
 from utils import counter_int, second_to_hmt
@@ -174,7 +175,7 @@ def base_prepare(folder, bfg, cnm, view=False):
                 eflag = True
                 break
     if len(fnames) > 1:
-        pass
+        fnames = merge_tiffs(fnames, folder)
     print("Starting Initializing Online")
     cnm.initialize_online()
     fls = cnm.params.get('data', 'fnames')

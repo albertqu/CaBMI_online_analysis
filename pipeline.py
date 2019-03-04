@@ -17,6 +17,7 @@ import os, time, copy
 import scipy
 import matplotlib.pyplot as plt
 import cv2
+from data_proc import merge_tiffs
 from scipy.sparse import csc_matrix
 from utils import counter_int, second_to_hmt
 from BMI_acq import set_up_bmi, baselineSimulation
@@ -154,14 +155,14 @@ def base_prepare(folder, bfg, cnm, view=False):
                 base_proc: tuple
                     data acquisition time, baseline process time
             """
-    bp0 = time.time() # SET Breakpoint
+    bp0 = time.time()  # SET Breakpoint
     bp1 = bp0
     counter = 0
     eflag = False
+    fnames = []
     while not eflag:
-        time.sleep(0.1) # Let thread sleep for certain intervals to
+        time.sleep(0.1)  # Let thread sleep for certain intervals to
         bp2 = time.time()
-
         if (bp2 - bp1) > counter_int:
             print("Time Since Start: {} minutes", counter_int)  # MORE DETAILED TIMER LATER
             counter += 1
@@ -169,10 +170,12 @@ def base_prepare(folder, bfg, cnm, view=False):
         for f in os.listdir(folder):
             # When baseline found, terminate the querying and start initial processing
             if f.find(bfg) != -1:
-                fnames = [os.path.join(folder, f)]
-                cnm.params.change_params({"fnames": fnames})
+                fnames.append(os.path.join(folder, f))
                 eflag = True
                 break
+    if len(fnames) > 1:
+        fnames = merge_tiffs(fnames, folder)
+    cnm.params.change_params({"fnames": fnames})
     print("Starting Initializing Online")
     cnm.initialize_online()
     fls = cnm.params.get('data', 'fnames')
