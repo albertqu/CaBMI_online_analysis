@@ -750,8 +750,22 @@ def cnm_benchmark_compare(cnm, data_root, folder, **kwargs):
 
 
 def cnm_benchmark(cnm, data_root, folder, **kwargs):
+    """
+    :param cnm:
+    :param data_root: ROOT path where analysis data will be saved
+    :param folder:
+    :param kwargs:
+    :return:
+    """
+    layer1 = os.path.join(data_root, 'analysis_data')
+    if not os.path.exists(layer1):
+        os.mkdir(layer1)
+
     consistency = os.path.join(data_root, 'analysis_data/onacid_consistency')
     performance = os.path.join(data_root, 'analysis_data/onacid_performance')
+    if not os.path.exists(performance):
+        os.mkdir(performance)
+
     import h5py
     # fp = h5py.File(os.path.join(performance, 'onacid_{}_seed{}.hdf5'.format(folder.split('/')[-2], randseed)),
     # mode='a')
