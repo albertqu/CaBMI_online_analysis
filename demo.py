@@ -109,6 +109,35 @@ def exp_test(data, rate=0):
     test_filter(ftr, sigs)
 
 
+def filter_sig(sig, ftr):
+    xlen = len(sig)
+    filtered = np.empty(xlen)
+    for i in range(xlen):
+        filtered[i] = ftr(sig, i)
+    return filtered
+
+
+def vis_diff_dist_pca(m1, m2, cov1, cov2, n=100):
+    d1 = np.random.multivariate_normal(m1, cov1, size=n)
+    d2 = np.random.multivariate_normal(m2, cov2, size=n)
+    X = np.vstack((d1, d2))
+    print(X.shape)
+    mu = np.mean(X, axis=0)
+    dmX = X - mu
+    cov = dmX.T @ dmX / n
+    c = ['r' if i < n else 'b' for i in range(2 * n)]
+    w, v = np.linalg.eig(cov)
+    x1, x2 = X[:, 0], X[:, 1]
+    plt.figure(figsize=(20, 10))
+    plt.scatter(x1, x2, c=c)
+    arr1 = plt.arrow(mu[0], mu[1], w[0] * v[0, 0], w[0] * v[1, 0], width=0.1,
+                    length_includes_head=True, color='#FFD700')
+    arr2 = plt.arrow(mu[0], mu[1], w[1] * v[0, 1], w[1] * v[1, 1], width=0.1,
+                    length_includes_head=True, color='#B87333')
+    plt.legend([arr1, arr2], ['eigvec 1', 'eigvec 2'])
+    plt.show()
+
+
 
 if __name__ == '__main__':
     func2(ftr=std_filter()[0])

@@ -289,6 +289,7 @@ def online_process(folder, ns, ns_start, cnm, query_rate=0, view=False, timeout=
         #cnm.baseline = cnm.estimates.C_on[cnm.params.get('init', 'nb'):cnm.M, :cnm.base]
         #cnm.estimates.C_on[:, cnm.base:] = 0
         logging.error("Expr already interrupted, please reinitialize the experiment.")
+        return cnm
     else:
         cnm.first_run = False
 
@@ -548,6 +549,9 @@ def demo():
     #np.save(os.path.join(basedir, 'online_seed_{}.npy'.format(randSeed)), cnm.estimates.C)
     cnm_benchmark(cnm, data_root, fullseries)
     close_online(cnm, os.path.join(basedir, 'cnm_fullseries2.pkl'))
+    # TODO: ADD FUNCTION TO SAVE THE INDIVIDUAL TIFFS?
+
+
 
 
 # %% plot contours

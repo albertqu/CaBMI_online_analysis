@@ -4,6 +4,7 @@ counter_int = 60
 
 
 class DCache:
+    # TODO: AUGMENT IT SUCH THAT IT WORKS FOR MULTIPLE
 
     def __init__(self, size=20, thres=3, buffer=False):
         """
@@ -47,4 +48,6 @@ def second_to_hmt(sec):
     h, sec = sec // 3600, sec % 3600
     m, sec = sec // 60, sec % 60
     return h, m, sec
+
+
 
