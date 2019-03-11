@@ -82,6 +82,8 @@ def set_up_bmi(cnm, iE1, iE2, T1):
         'curval': 0,
         'freqval': 0,
         'dynamicLen': movingAverageFrames,
+        'E1': E1,
+        'E2': E2
     }
 
     #a = serial.Serial('COM15')  # TODO: CHECK BAUDRATE and timeout
