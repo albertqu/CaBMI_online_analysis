@@ -21,7 +21,7 @@ from data_proc import merge_tiffs
 import SETTINGS
 from scipy.sparse import csc_matrix
 from utils import counter_int, second_to_hmt
-from BMI_acq import set_up_bmi, baselineSimulation
+from BMI_acq_old import set_up_bmi, baselineSimulation
 from pipeline import cnm_init, base_prepare, close_online, vis_neuron, analysis_time_contrast
 
 # Caiman Modules

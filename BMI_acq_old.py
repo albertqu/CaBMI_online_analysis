@@ -1,6 +1,5 @@
 import numpy as np
 import os, time, serial
-import nanpy
 
 
 def set_up_bmi(cnm, iE1, iE2, T1):
@@ -87,9 +86,7 @@ def set_up_bmi(cnm, iE1, iE2, T1):
         'E2': E2
     }
 
-    a = nanpy.ArduinoApi()
-    a.pinMode(10, a.OUTPUT)
-    aTone = nanpy.Tone(pin=11, connection='COM11')  # TODO: CHECK COM
+    #a = serial.Serial('COM15')  # TODO: CHECK BAUDRATE and timeout
     print('starting arduino')  # TODO: CHECK TO HANDLE CONNECTION LOSS
 
     def feed_to_bmi(allvals, *args):
@@ -120,6 +117,26 @@ def set_up_bmi(cnm, iE1, iE2, T1):
         # TODO: CALCULATE ONLY AFTER CERTAIN PERIOD
         # THIS chunk of code simply updates the expHistory which is a buffer of frames on which
         # we calculate average, in our case we only need a length, and we could slices on
+        """thisFrame = evalin('base','hSI.hScan2D.hAcq.hFpga.AcqStatusAcquiredFrames') #TODO: CHECK USAGE
+        thisVol = thisFrame//nZ
+        #if we've completed a new volume, update history
+        # store nans on frames that we've skipped so we know we skipped
+        # them
+        #if thisVol > lastVol:
+        #update frame
+        steps = thisVol - lastVol
+        lastVol = thisVol
+        TODO: CHECK USAGE
+        # variable to hold nans in unseen frames
+        placeholder = np.empty((np.prod(vals.dims),steps-1))
+        mVals = np.hstack((placeholder, vals)) # TODO CHECK USAGE [] no ; horizontal?
+
+        # update buffer of activity history
+        if steps < movingAverageFrames:
+            expHistory[:, :len(expHistory)-steps] = expHistory[:, steps:] # 
+            expHistory[:,len(expHistory)-steps:] = mVals
+        else:
+            expHistory = mVals[:, len(expHistory)-movingAverageFrames:] """
 
         vals = allvals[rois]
 
@@ -196,12 +213,12 @@ def set_up_bmi(cnm, iE1, iE2, T1):
             else:
                 if cursor[i-1] <= T1 and not motionFlag:  # if it hit the target
                     # remove tone
-                    aTone.play(freq, 1) # nanpy
+                    #a.playTone("D11", freq, 1)
                     print('Tone played {}'.format(freq))
                     # give water reward
-                    a.digitalWrite(10, 1)
+                    #a.writeDigitalPin("D10", 1)
                     time.sleep(0.010)
-                    a.digitalWrite(10, 0)
+                    #a.writeDigitalPin("D10", 0)  # TODO: ARDUINO CHECK USAGE
                     # update rewardHistory
                     rewardHistory = rewardHistory + 1
                     print(['Trial: ', str(trialHistory), 'Rewards: ', str(rewardHistory)])
@@ -214,10 +231,10 @@ def set_up_bmi(cnm, iE1, iE2, T1):
                     backtobaselineFlag = True
                 else:
                     # update the tone to the new cursor
-                    aTone.play(freq, 1)
+                    #a.playTone("D11", freq, 1)
                     print('Tone played {}'.format(freq))
                     if time.time() - tim > durationTrial:
-                        aTone.play(0, timeout)
+                        #a.playTone("D11", 0, timeout) TODO: ARDUINO
                         print('Timeout')
                         cnm.params.get('bmi', 'trialEnd').append(i)
                         cnm.params.get('bmi', 'miss').append(i)

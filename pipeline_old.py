@@ -15,7 +15,7 @@ import os, time
 import scipy
 import cv2
 from .utils import counter_int, second_to_hmt
-from .BMI_acq import set_up_bmi
+from .BMI_acq_old import set_up_bmi
 
 # Caiman Modules
 import caiman as cm

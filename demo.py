@@ -137,8 +137,7 @@ def vis_diff_dist_pca(m1, m2, cov1, cov2, n=100):
     plt.legend([arr1, arr2], ['eigvec 1', 'eigvec 2'])
     plt.show()
 
-
-
 if __name__ == '__main__':
     func2(ftr=std_filter()[0])
-    pass
+
+

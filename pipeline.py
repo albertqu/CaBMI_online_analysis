@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt
 import cv2, tifffile
 from scipy.sparse import csc_matrix
 from utils import counter_int, second_to_hmt, MemmapHandler, get_tif_size
-from BMI_acq import set_up_bmi, baselineSimulation
+from BMI_acq_old import set_up_bmi, baselineSimulation
 from datetime import datetime
 
 
