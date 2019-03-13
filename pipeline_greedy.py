@@ -21,8 +21,8 @@ from data_proc import merge_tiffs
 import SETTINGS
 from scipy.sparse import csc_matrix
 from utils import counter_int, second_to_hmt
-from BMI_acq_old import set_up_bmi, baselineSimulation
-from pipeline import cnm_init, base_prepare, close_online, vis_neuron, analysis_time_contrast
+from BMI_acq import set_up_bmi, baselineSimulation
+from pipeline import cnm_init, base_prepare, close_online, vis_neuron, analysis_time_contrast, full_vs_t_thres
 
 # Caiman Modules
 import caiman as cm
@@ -448,15 +448,15 @@ def uno_proc_comb(frame, cnm, t, old_comps, t_online, out, max_shifts_online, AT
 
 
 def cnm_benchmark_compare(cnm, data_root, folder, **kwargs):
-    consistency = os.path.join(data_root, 'analysis_data/onacid_consistency')
-    performance = os.path.join(data_root, 'analysis_data/onacid_performance')
+    consistency = os.path.join(data_root, 'analysis_data{}onacid_consistency'.format(SETTINGS.PATH_SPLITTER))
+    performance = os.path.join(data_root, 'analysis_data{}onacid_performance'.format(SETTINGS.PATH_SPLITTER))
     import h5py
     # fp = h5py.File(os.path.join(performance, 'onacid_{}_seed{}.hdf5'.format(folder.split('/')[-2], randseed)),
     # mode='a')
     if 'saveopt' in kwargs:
-        savefil = 'onacid_{}_{}.hdf5'.format(folder.split('/')[-1], kwargs['saveopt'])
+        savefil = 'onacid_{}_{}.hdf5'.format(folder.split(SETTINGS.PATH_SPLITTER)[-1], kwargs['saveopt'])
     else:
-        savefil = 'onacid_{}.hdf5'.format(folder.split('/')[-1])
+        savefil = 'onacid_{}.hdf5'.format(folder.split(SETTINGS.PATH_SPLITTER)[-1])
     fp = h5py.File(os.path.join(performance, savefil), mode='a')
     fp.create_dataset('comp_upd', data=cnm.comp_upd)
     fp.create_dataset('t_online', data=cnm.t_online)
@@ -489,8 +489,8 @@ def cnm_benchmark(cnm, data_root, folder, **kwargs):
     if not os.path.exists(layer1):
         os.mkdir(layer1)
 
-    consistency = os.path.join(data_root, 'analysis_data/onacid_consistency')
-    performance = os.path.join(data_root, 'analysis_data/onacid_performance')
+    consistency = os.path.join(data_root, 'analysis_data{}onacid_consistency'.format(SETTINGS.PATH_SPLITTER))
+    performance = os.path.join(data_root, 'analysis_data{}onacid_performance'.format(SETTINGS.PATH_SPLITTER))
     if not os.path.exists(performance):
         os.mkdir(performance)
 
@@ -498,9 +498,9 @@ def cnm_benchmark(cnm, data_root, folder, **kwargs):
     # fp = h5py.File(os.path.join(performance, 'onacid_{}_seed{}.hdf5'.format(folder.split('/')[-2], randseed)),
     # mode='a')
     if 'saveopt' in kwargs:
-        savefil = 'onacid_{}_{}.hdf5'.format(folder.split('/')[-1], kwargs['saveopt'])
+        savefil = 'onacid_{}_{}.hdf5'.format(folder.split(SETTINGS.PATH_SPLITTER)[-1], kwargs['saveopt'])
     else:
-        savefil = 'onacid_{}.hdf5'.format(folder.split('/')[-1])
+        savefil = 'onacid_{}.hdf5'.format(folder.split(SETTINGS.PATH_SPLITTER)[-1])
     fp = h5py.File(os.path.join(performance, savefil), mode='a')
     fp.create_dataset('comp_upd', data=cnm.comp_upd)
     fp.create_dataset('t_online', data=cnm.t_online)
@@ -517,28 +517,34 @@ def cnm_benchmark(cnm, data_root, folder, **kwargs):
     fp.create_dataset('Ab', data=cnm.estimates.Ab.toarray())
     fp.close()
 
+
 # %%
 def demo():
     pass
-    data_root = "/Users/albertqu/Documents/7.Research/BMI"
-    fullseries = os.path.join(data_root, 'full_series0')
-    logfile = os.path.join(data_root, "online.log")
-    base_flag, ext, frame_ns = "online_", 'tif', "online_{}.tiff"
-    basedir = os.path.join(data_root, 'basedir0')
-    # randSeed = 10
-    # random.seed(randSeed)
-    # np.random.seed(randSeed)
-    cnm = cnm_init(15 * 60, 15 * 60 * 4)
-    cnm = base_prepare(basedir, base_flag, cnm)
-    # visualize_neurons(cnm.baseline)
+    out_root = SETTINGS.out_root
+    data_root = SETTINGS.data_root  # TODO: make the directories easy for change
+    merge_outpath = os.path.join(out_root, SETTINGS.merge)
+    data0, data1 = os.path.join(data_root, "data0"), os.path.join(data_root, "data1")
+    fullseries = os.path.join(data_root, SETTINGS.series)
+    logfile = os.path.join(out_root, "online.log")
+    ext, frame_ns = 'tif', "online_{}.tiff"
+    basedir = os.path.join(data_root, SETTINGS.basedir)
+    base_dur, online_dur = 15 * 60, 15 * 60
+    fs = 10 # DATA Framerate
+    base_flag = 'online_{}.tiff', 0, base_dur * fs
+    cnm = cnm_init(base_dur, online_dur, fs)
+    cnm = base_prepare(basedir, base_flag, cnm, batch_tif=10, outpath=merge_outpath)
+    #visualize_neurons(cnm.baseline)
     E1, E2 = [0, 1], [2, 3]
     pc, T1 = baselineSimulation(cnm, E1, E2)
     print("Recommending T1: {}, with {}% correct.".format(T1, pc))
     set_up_bmi(cnm, E1, E2, T1)
     online_process(fullseries, frame_ns, 0, cnm)
-    # np.save(os.path.join(basedir, 'online_seed_{}.npy'.format(randSeed)), cnm.estimates.C)
-    cnm_benchmark(cnm, data_root, fullseries, saveopt="greedy_fr=40")
-    close_online(cnm, data_root, fullseries, saveopt="greedy_fr=40")
+    opt = SETTINGS.OPT + '_greedy'
+    cnm_benchmark(cnm, out_root, fullseries, saveopt=opt)
+    close_online(cnm, out_root, fullseries, saveopt=opt)
+    os.system("""osascript -e 'display notification "Job Done" with title "{}"'""".format('pipeline'))
+    full_vs_t_thres(cnm, 0.075, opt, os.path.join(out_root, 'plots'), online_dur * fs)
     # TODO: ADD FUNCTION TO SAVE THE INDIVIDUAL TIFFS?
     return cnm
 

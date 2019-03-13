@@ -1,9 +1,10 @@
 import numpy as np
 import os, time, serial
 import nanpy
+from utils import DCache
 
 
-def set_up_bmi(cnm, iE1, iE2, T1):
+def set_up_bmi(cnm, iE1, iE2, T1, std_filter_thres=2):
     """# Variables to define before running the code / designate in interface
     while True:
         try:
@@ -45,6 +46,10 @@ def set_up_bmi(cnm, iE1, iE2, T1):
     freqMax = 18000
     freqMin = 2000
     freqmed = (freqMax - freqMin) / 2  # Calculates the mean frequency
+    if std_filter_thres:
+        std_ftr = DCache(20, std_filter_thres)
+    cnm.raw_sig = np.zeros((units, cnm.Ts-cnm.base))
+    cnm.base_vals = np.zeros((units, cnm.Ts-cnm.base))
 
     # values of parameters in frames
     frameRate = cnm.params.get('data', 'fr')
@@ -87,9 +92,9 @@ def set_up_bmi(cnm, iE1, iE2, T1):
         'E2': E2
     }
 
-    a = nanpy.ArduinoApi()
-    a.pinMode(10, a.OUTPUT)
-    aTone = nanpy.Tone(pin=11, connection='COM11')  # TODO: CHECK COM
+    #a = nanpy.ArduinoApi() TODO: ENABLE
+    #a.pinMode(10, a.OUTPUT) TODO: ENABLE
+    #aTone = nanpy.Tone(pin=11, connection='COM11') # TODO: ENABLE, CHECK COM
     print('starting arduino')  # TODO: CHECK TO HANDLE CONNECTION LOSS
 
     def feed_to_bmi(allvals, *args):
@@ -163,10 +168,16 @@ def set_up_bmi(cnm, iE1, iE2, T1):
             # calculate baseline activity and actual activity for the DFF
             # signal = np.nanmean(expHistory, 1) # TODO: Check Usage √
             signal = np.nanmean(vals, 1)
-            if i >= baseFrames:
-                baseval = (baseval * (baseFrames - 1) + signal) / baseFrames  # TODO: CHECK USAGE TO SEE IF DOT PRODUCT
+            cnm.raw_sig[:, i-1] = signal
+            if std_filter_thres:
+                std_ftr.add(signal)
+                baseval = std_ftr.get_val()
             else:
-                baseval = (baseval * (i - 1) + signal) / i
+                if i >= baseFrames:
+                    baseval = (baseval * (baseFrames - 1) + signal) / baseFrames  # TODO: CHECK USAGE TO SEE IF DOT PRODUCT
+                else:
+                    baseval = (baseval * (i - 1) + signal) / i
+            cnm.base_vals[:, i-1] = baseval
 
             print(i)
 
@@ -196,12 +207,12 @@ def set_up_bmi(cnm, iE1, iE2, T1):
             else:
                 if cursor[i-1] <= T1 and not motionFlag:  # if it hit the target
                     # remove tone
-                    aTone.play(freq, 1) # nanpy
+                    # aTone.play(freq, 1) # nanpy TODO: ENABLE
                     print('Tone played {}'.format(freq))
                     # give water reward
-                    a.digitalWrite(10, 1)
+                    # a.digitalWrite(10, 1) TODO: ENABLE
                     time.sleep(0.010)
-                    a.digitalWrite(10, 0)
+                    #a.digitalWrite(10, 0) TODO: ENABLE
                     # update rewardHistory
                     rewardHistory = rewardHistory + 1
                     print(['Trial: ', str(trialHistory), 'Rewards: ', str(rewardHistory)])
@@ -214,10 +225,10 @@ def set_up_bmi(cnm, iE1, iE2, T1):
                     backtobaselineFlag = True
                 else:
                     # update the tone to the new cursor
-                    aTone.play(freq, 1)
+                    #aTone.play(freq, 1) TODO: ENABLE
                     print('Tone played {}'.format(freq))
                     if time.time() - tim > durationTrial:
-                        aTone.play(0, timeout)
+                        #aTone.play(0, timeout) TODO: ENABLE
                         print('Timeout')
                         cnm.params.get('bmi', 'trialEnd').append(i)
                         cnm.params.get('bmi', 'miss').append(i)

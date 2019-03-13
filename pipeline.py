@@ -18,8 +18,9 @@ import matplotlib.pyplot as plt
 import cv2, tifffile
 from scipy.sparse import csc_matrix
 from utils import counter_int, second_to_hmt, MemmapHandler, get_tif_size
-from BMI_acq_old import set_up_bmi, baselineSimulation
+from BMI_acq import set_up_bmi, baselineSimulation
 from datetime import datetime
+import SETTINGS
 
 
 # Caiman Modules
@@ -326,6 +327,7 @@ def online_process(folder, ns, ns_start, cnm, query_rate=0, view=False, timeout=
     t = cnm.base
     # cnm.Ab_epoch = []  TODO: NO EPOCH IN ONLINE
     t_online = copy.deepcopy(cnm.t_online)
+
     t_wait = []
     t_bmi = []
     max_shifts_online = cnm.params.get('online', 'max_shifts_online')
@@ -513,7 +515,7 @@ def random_test():
 
 def close_online(cnm, data_root, folder, del_mergetif=True, **kwargs):
     # TODO: Merge all files to one bigtiff?
-    log = os.path.join(data_root, 'analysis_data/online_log')
+    log = os.path.join(data_root, 'analysis_data{}online_log'.format(SETTINGS.PATH_SPLITTER))
     dt = datetime.now().strftime("%m-%d-%Y-%H-%M-%S")
     try:
         del cnm.feed_to_bmi
@@ -522,9 +524,9 @@ def close_online(cnm, data_root, folder, del_mergetif=True, **kwargs):
     if 'dims' in cnm.__dict__:
         del cnm.dims
     if 'saveopt' in kwargs:
-        savefil = 'onacid_{}_{}_t={}.hdf5'.format(folder.split('/')[-1], kwargs['saveopt'], dt)
+        savefil = 'onacid_{}_{}_t={}.hdf5'.format(folder.split(SETTINGS.PATH_SPLITTER)[-1], kwargs['saveopt'], dt)
     else:
-        savefil = 'onacid_{}_{}.hdf5'.format(folder.split('/')[-1], dt)
+        savefil = 'onacid_{}_{}.hdf5'.format(folder.split(SETTINGS.PATH_SPLITTER)[-1], dt)
     if del_mergetif:
         for f in cnm.params.get('data', 'fnames'):
             if f.find("mergetif") != -1 and os.path.exists(f):
@@ -534,14 +536,14 @@ def close_online(cnm, data_root, folder, del_mergetif=True, **kwargs):
 
 
 def cnm_benchmark(cnm, data_root, folder, **kwargs):
-    performance = os.path.join(data_root, 'analysis_data/onacid_performance')
+    performance = os.path.join(data_root, 'analysis_data{}onacid_performance'.format(SETTINGS.PATH_SPLITTER))
     import h5py
     #fp = h5py.File(os.path.join(performance, 'onacid_{}_seed{}.hdf5'.format(folder.split('/')[-2], randseed)),
     # mode='a')
     if 'saveopt' in kwargs:
-        savefil = 'onacid_{}_{}.hdf5'.format(folder.split('/')[-1],  kwargs['saveopt'])
+        savefil = 'onacid_{}_{}.hdf5'.format(folder.split(SETTINGS.PATH_SPLITTER)[-1],  kwargs['saveopt'])
     else:
-        savefil = 'onacid_{}.hdf5'.format(folder.split('/')[-1])
+        savefil = 'onacid_{}.hdf5'.format(folder.split(SETTINGS.PATH_SPLITTER)[-1])
     fp = h5py.File(os.path.join(performance, savefil), mode='a')
     fp.create_dataset('comp_upd', data=cnm.comp_upd)
     fp.create_dataset('t_online', data=cnm.t_online)
@@ -599,14 +601,14 @@ def full_vs_t_thres(obj, t_thres, opt, savepath, online_dur, only_proc=False):
 # %%
 def demo():
     pass
-    out_root = "/Users/albertqu/Documents/7.Research/BMI"
-    data_root = "/Volumes/ALBERTSHD/BMI"  # TODO: make the directories easy for change
-    merge_outpath = os.path.join(out_root, "merge")
+    out_root = SETTINGS.out_root
+    data_root = SETTINGS.data_root  # TODO: make the directories easy for change
+    merge_outpath = os.path.join(out_root, SETTINGS.merge)
     data0, data1 = os.path.join(data_root, "data0"), os.path.join(data_root, "data1")
-    fullseries = os.path.join(data_root, 'full_series0')
+    fullseries = os.path.join(data_root, SETTINGS.series)
     logfile = os.path.join(out_root, "online.log")
     ext, frame_ns = 'tif', "online_{}.tiff"
-    basedir = os.path.join(data_root, 'basedir0')
+    basedir = os.path.join(data_root, SETTINGS.basedir)
     base_dur, online_dur = 15 * 60, 15 * 60 * 4
     fs = 10 # DATA Framerate
     base_flag = 'online_{}.tiff', 0, base_dur * fs
@@ -618,7 +620,7 @@ def demo():
     print("Recommending T1: {}, with {}% correct.".format(T1, pc))
     set_up_bmi(cnm, E1, E2, T1)
     online_process(fullseries, frame_ns, 0, cnm)
-    opt = "fr=80_k=2_crossdisk"
+    opt = SETTINGS.OPT
     cnm_benchmark(cnm, out_root, fullseries, saveopt=opt)
     close_online(cnm, out_root, fullseries, saveopt=opt)
     os.system("""osascript -e 'display notification "Job Done" with title "{}"'""".format('pipeline'))
