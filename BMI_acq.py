@@ -1,10 +1,10 @@
 import numpy as np
-import os, time, serial
-import nanpy
+import os, time
+from arduino_delegate import ArduinoDelegate
 from utils import DCache
 
 
-def set_up_bmi(cnm, iE1, iE2, T1, std_filter_thres=2):
+def set_up_bmi(cnm, iE1, iE2, T1, std_filter_thres=2, debug=False):
     """# Variables to define before running the code / designate in interface
     while True:
         try:
@@ -41,15 +41,16 @@ def set_up_bmi(cnm, iE1, iE2, T1, std_filter_thres=2):
     durationTrial = 30  # maximum time that mice have for a trial
     movingAverage = 1  # Moving average of frames to calculate BMI in sec
     timeout = 5  # seconds of timeout if no hit in duration trial (sec)
-    expectedLengthExperiment = cnm.Ts  # frames that will last the online experiment (less than actual exp)
+    expectedLengthExperiment = cnm.Ts - cnm.base  # frames that will last the online experiment (less than actual exp)
     baseLength = 2 * 60  # to establish BL todo: is this the baseline? 2 mins?
     freqMax = 18000
     freqMin = 2000
     freqmed = (freqMax - freqMin) / 2  # Calculates the mean frequency
     if std_filter_thres:
         std_ftr = DCache(20, std_filter_thres)
-    cnm.raw_sig = np.zeros((units, cnm.Ts-cnm.base))
-    cnm.base_vals = np.zeros((units, cnm.Ts-cnm.base))
+    if debug:
+        cnm.raw_sig = np.zeros((units, cnm.Ts-cnm.base))
+        cnm.base_vals = np.zeros((units, cnm.Ts-cnm.base))
 
     # values of parameters in frames
     frameRate = cnm.params.get('data', 'fr')
@@ -61,13 +62,13 @@ def set_up_bmi(cnm, iE1, iE2, T1, std_filter_thres=2):
     # %% ONSET INITIALIZATION
 
     # expHistory = np.empty((units, movingAverageFrames), dtype=np.float32)  # define a windows buffer
-    cursor = np.empty(expectedLengthExperiment, dtype=np.float32)  # define a very long vector for cursor
-    frequency = np.empty(expectedLengthExperiment, dtype=np.float32)  # TODO: CHECK IF OK TO REMOVE
+    cursor = np.zeros(expectedLengthExperiment, dtype=np.float32)  # define a very long vector for cursor
+    frequency = np.zeros(expectedLengthExperiment, dtype=np.float32)  # TODO: CHECK IF OK TO REMOVE
     baseval = np.ones(units, dtype=np.float32)
     i = 0 # TODO: CHECK AGAIN AND SET TO 0
     rewardHistory = 0
     trialHistory = 0
-    motionFlag = False
+    #motionFlag = False
     motionCounter = 0
     lastVol = 0  # careful with this it may create problems
     tim = time.time()  # TODO: CHECK USAGE
@@ -92,9 +93,7 @@ def set_up_bmi(cnm, iE1, iE2, T1, std_filter_thres=2):
         'E2': E2
     }
 
-    #a = nanpy.ArduinoApi() TODO: ENABLE
-    #a.pinMode(10, a.OUTPUT) TODO: ENABLE
-    #aTone = nanpy.Tone(pin=11, connection='COM11') # TODO: ENABLE, CHECK COM
+    a = ArduinoDelegate(port='/dev/tty.usbmodem1411')
     print('starting arduino')  # TODO: CHECK TO HANDLE CONNECTION LOSS
 
     def feed_to_bmi(allvals, *args):
@@ -104,7 +103,7 @@ def set_up_bmi(cnm, iE1, iE2, T1, std_filter_thres=2):
         nonlocal trialHistory
         nonlocal i
         nonlocal tim
-        nonlocal motionFlag
+        #nonlocal motionFlag
         nonlocal motionCounter
         nonlocal trialFlag
         nonlocal backtobaselineFlag
@@ -168,7 +167,8 @@ def set_up_bmi(cnm, iE1, iE2, T1, std_filter_thres=2):
             # calculate baseline activity and actual activity for the DFF
             # signal = np.nanmean(expHistory, 1) # TODO: Check Usage √
             signal = np.nanmean(vals, 1)
-            cnm.raw_sig[:, i-1] = signal
+            if debug:
+                cnm.raw_sig[:, i-1] = signal
             if std_filter_thres:
                 std_ftr.add(signal)
                 baseval = std_ftr.get_val()
@@ -177,7 +177,8 @@ def set_up_bmi(cnm, iE1, iE2, T1, std_filter_thres=2):
                     baseval = (baseval * (baseFrames - 1) + signal) / baseFrames  # TODO: CHECK USAGE TO SEE IF DOT PRODUCT
                 else:
                     baseval = (baseval * (i - 1) + signal) / i
-            cnm.base_vals[:, i-1] = baseval
+            if debug:
+                cnm.base_vals[:, i-1] = baseval
 
             print(i)
 
@@ -205,14 +206,14 @@ def set_up_bmi(cnm, iE1, iE2, T1, std_filter_thres=2):
                     backtobaselineFlag = False
                 tim = time.time()  # to avoid false timeouts while it goes back to baseline
             else:
-                if cursor[i-1] <= T1 and not motionFlag:  # if it hit the target
+                #if cursor[i-1] <= T1 and not motionFlag:  # if it hit the target
+                if cursor[i - 1] <= T1:
                     # remove tone
-                    # aTone.play(freq, 1) # nanpy TODO: ENABLE
-                    print('Tone played {}'.format(freq))
+                    a.playTone(freq)
+                    #print('Tone played {}'.format(freq))
                     # give water reward
-                    # a.digitalWrite(10, 1) TODO: ENABLE
-                    time.sleep(0.010)
-                    #a.digitalWrite(10, 0) TODO: ENABLE
+                    a.reward() #TODO: SWITCH TO 1 FOR TTL
+                    time.sleep(0.01)
                     # update rewardHistory
                     rewardHistory = rewardHistory + 1
                     print(['Trial: ', str(trialHistory), 'Rewards: ', str(rewardHistory)])
@@ -225,18 +226,17 @@ def set_up_bmi(cnm, iE1, iE2, T1, std_filter_thres=2):
                     backtobaselineFlag = True
                 else:
                     # update the tone to the new cursor
-                    #aTone.play(freq, 1) TODO: ENABLE
-                    print('Tone played {}'.format(freq))
+                    a.playTone(freq)
+                    #print('Tone played {}'.format(freq))
                     if time.time() - tim > durationTrial:
-                        #aTone.play(0, timeout) TODO: ENABLE
                         print('Timeout')
                         cnm.params.get('bmi', 'trialEnd').append(i)
                         cnm.params.get('bmi', 'miss').append(i)
                         trialFlag = True
                         misscount += 1
                         counter = timeoutFrames
-                    if cursor[i-1] >= T1 and motionFlag:
-                        print('mot too high for reward')
+                    """if cursor[i-1] >= T1 and motionFlag:
+                        print('mot too high for reward')"""
         else:
             counter = counter - 1
 
@@ -248,6 +248,8 @@ def set_up_bmi(cnm, iE1, iE2, T1, std_filter_thres=2):
                                   'duration': i})
         cnm.params.get('bmi', 'cursor')[i-1] = curval
         cnm.params.get('bmi', 'frequency')[i - 1] = freqval
+        if i == expectedLengthExperiment:
+            a.close()
 
     cnm.feed_to_bmi = feed_to_bmi
 

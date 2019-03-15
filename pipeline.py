@@ -598,6 +598,29 @@ def full_vs_t_thres(obj, t_thres, opt, savepath, online_dur, only_proc=False):
     analysis_time_contrast(tt_arr, 't_thres={}'.format(t_thres), t_all, opt, savepath)
 
 
+def ensemble_test(cnm, E1, E2, outpath=None, saveopt=None):
+    all_E = E1+E2
+    ensemble = cnm.estimates.C[all_E]
+    ensemble_online = ensemble[:, cnm.base:]
+    seqlen = ensemble.shape[0]
+    goodfac = max([i for i in range(1, int(np.sqrt(seqlen)) + 1) if seqlen % i == 0])
+    complement = seqlen // goodfac
+    best_col, best_row = min(goodfac, complement), max(goodfac, complement)
+    fig, axes = plt.subplots(nrows=best_row, ncols=best_col, figsize=(20, 10))
+    rowlen = axes.shape[1]
+    for i in range(len(axes)):
+        for j, ax in enumerate(axes[i]):
+            target = i * rowlen + j
+            sigs = np.vstack((ensemble_online[target], cnm.raw_sig[target], cnm.base_vals[target],
+                               cnm.raw_sig[target]-cnm.base_vals[target])).T
+            ax.plot(sigs)
+            ax.legend(['Online', 'Smoothed', 'Base_vals', 'Filtered'])
+            ax.set_title('Neuron {}'.format(all_E[target]))
+    if saveopt is not None and outpath is not None:
+        fig.savefig(os.path.join(outpath, "Ensemble Neuron With Filters {}".format(saveopt)))
+
+
+
 # %%
 def demo():
     pass

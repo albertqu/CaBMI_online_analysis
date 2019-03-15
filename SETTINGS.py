@@ -6,5 +6,5 @@ merge = 'merge'
 basedir = 'basedir0'
 series = 'full_series0'
 frame_ns = 'online_{}.tiff'
-OPT = "fr=80_k=2_indisk_ftr_small"
+OPT = "fr=80_k=2_indisk_ftr_arduino"
 PATH_SPLITTER = '/'
