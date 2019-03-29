@@ -1,3 +1,5 @@
+__author__ = 'Albert Qu'
+
 import numpy as np
 from utils import DCache
 import matplotlib.pyplot as plt

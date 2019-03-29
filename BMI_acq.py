@@ -1,10 +1,13 @@
+__author__ = 'Nuria', 'Albert Qu'
+
 import numpy as np
 import os, time
 from arduino_delegate import ArduinoDelegate
 from utils import DCache
+import SETTINGS
 
 
-def set_up_bmi(cnm, iE1, iE2, T1, std_filter_thres=2, debug=False):
+def set_up_bmi(cnm, iE1, iE2, T1, std_filter_thres=2, debug=False, sim=False):
     """# Variables to define before running the code / designate in interface
     while True:
         try:
@@ -92,8 +95,8 @@ def set_up_bmi(cnm, iE1, iE2, T1, std_filter_thres=2, debug=False):
         'E1': E1,
         'E2': E2
     }
-
-    a = ArduinoDelegate(port='/dev/tty.usbmodem1411')
+    if not sim:
+        a = ArduinoDelegate(port=SETTINGS.PORT)
     print('starting arduino')  # TODO: CHECK TO HANDLE CONNECTION LOSS
 
     def feed_to_bmi(allvals, *args):
@@ -209,10 +212,11 @@ def set_up_bmi(cnm, iE1, iE2, T1, std_filter_thres=2, debug=False):
                 #if cursor[i-1] <= T1 and not motionFlag:  # if it hit the target
                 if cursor[i - 1] <= T1:
                     # remove tone
-                    a.playTone(freq)
-                    #print('Tone played {}'.format(freq))
-                    # give water reward
-                    a.reward() #TODO: SWITCH TO 1 FOR TTL
+                    if not sim:
+                        a.playTone(freq)
+                        #print('Tone played {}'.format(freq))
+                        # give water reward
+                        a.reward() #TODO: SWITCH TO 1 FOR TTL
                     time.sleep(0.01)
                     # update rewardHistory
                     rewardHistory = rewardHistory + 1
@@ -226,7 +230,8 @@ def set_up_bmi(cnm, iE1, iE2, T1, std_filter_thres=2, debug=False):
                     backtobaselineFlag = True
                 else:
                     # update the tone to the new cursor
-                    a.playTone(freq)
+                    if not sim:
+                        a.playTone(freq)
                     #print('Tone played {}'.format(freq))
                     if time.time() - tim > durationTrial:
                         print('Timeout')
@@ -248,7 +253,7 @@ def set_up_bmi(cnm, iE1, iE2, T1, std_filter_thres=2, debug=False):
                                   'duration': i})
         cnm.params.get('bmi', 'cursor')[i-1] = curval
         cnm.params.get('bmi', 'frequency')[i - 1] = freqval
-        if i == expectedLengthExperiment:
+        if not sim and i == expectedLengthExperiment:
             a.close()
 
     cnm.feed_to_bmi = feed_to_bmi

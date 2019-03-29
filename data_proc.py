@@ -1,3 +1,5 @@
+__author__ = 'Albert Qu'
+
 import tifffile
 import os
 import numpy as np

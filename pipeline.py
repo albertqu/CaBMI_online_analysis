@@ -17,8 +17,9 @@ import os, time, copy
 import matplotlib.pyplot as plt
 import cv2, tifffile
 from scipy.sparse import csc_matrix
-from utils import counter_int, second_to_hmt, MemmapHandler, get_tif_size
+from utils import second_to_hmt, MemmapHandler, get_tif_size
 from BMI_acq import set_up_bmi, baselineSimulation
+from data_plots import analysis_time_contrast
 from datetime import datetime
 import SETTINGS
 
@@ -27,21 +28,24 @@ import SETTINGS
 import caiman as cm
 from caiman.motion_correction import motion_correct_iteration_fast, tile_and_correct
 from caiman.source_extraction import cnmf
+from caiman.utils.utils import recursively_save_dict_contents_to_group
 
 
 def cnm_init(dur_base, dur_online, fs=10):
-    """Function that initializes the CNM
+    """Initializes caiman OnAcid object with the parameters in the code body. Params may vary from experiment to
+    experiment and need to be adjusted in accordance to experiment specifics.
         Args:
             dur_base: type: int
                 (seconds) duration of baseline activities
                 At least 15 mins
             dur_online: type: int
                 (seconds) duration of online activities,
-                has to be integer multiples of dur_base
+                most ideally be integer multiples of dur_base, if not, extra memory storage will be allocated that
+                would be integer multiples of dur_base
 
         Returns:
             OnAcid Object featuring a C_on with length
-            [dur_base+dur_online].
+            [dur_base+dur_online*], where dur_online is dur_online rounded up to integer multiples of dur_base
         """
 
     # IMPORTANT DATA PATHS
@@ -52,11 +56,11 @@ def cnm_init(dur_base, dur_online, fs=10):
 
     # PARAMETER SETTING
     fr = 80  # frame rate (Hz) TODO: CHANGED TO 10 SEE IF IT AFFECTS
-    decay_time = 0.5  # approximate length of transient event in seconds
+    decay_time = 0.3  # approximate length of transient event in seconds
     gSig = (4, 4)  # expected half size of neurons
     p = 1  # order of AR indicator dynamics
     min_SNR = 2.5  # minimum SNR for accepting new components
-    ds_factor = 1  # spatial downsampling factor (increases speed but may lose some fine structure)
+    ds_factor = 1  # spatial downsampling factor, newImg=img/ds_factor(increases speed but may lose some fine structure)
     gnb = 2  # number of background components
     gSig = tuple(np.ceil(np.array(gSig) / ds_factor).astype('int'))  # recompute gSig if downsampling is involved
     mot_corr = True  # flag for online motion correction
@@ -73,7 +77,7 @@ def cnm_init(dur_base, dur_online, fs=10):
     if exprLen > dur_online + dur_base:
         logging.warning("Experiment length must be integer multiples of baseline. Therefore, the length of online "
                         "period is rounded up to {}".format(int(exprLen) - int(dur_base)))
-    show_movie = False  # show the movie as the data gets processed
+    show_movie = True  # show the movie as the data gets processed
     print("Frame rate: {}".format(fr))
     params_dict = {'fr': fr,
                    'decay_time': decay_time,
@@ -94,61 +98,76 @@ def cnm_init(dur_base, dur_online, fs=10):
                    'pw_rigid': pw_rigid,
                    'dist_shape_update': True,
                    'min_num_trial': 10,
-                   'show_movie': show_movie}
+                   'show_movie': show_movie,
+                   'save_online_movie': True}
     opts = cnmf.params.CNMFParams(params_dict=params_dict)
     cnm = cnmf.online_cnmf.OnACID(params=opts)
     cnm.base = dur_base * fs
     return cnm
 
 
-def base_prepare(folder, bfg, cnm, view=False, debug=False, batch_tif=10, **kwargs):
-    # TODO: Takes in folder, bfg (baseline flag) and cnm objec
-    """Implements the caiman online pipeline initialization procedure based on
-        baseline activity.
+def base_prepare(folder, bfg, cnm, batch_tif=10, view=False, debug=False, **kwargs):
+    """ Runs baseline procedure for real-time OnAcid pipeline, merge all the input tifs to mergetifs in an outpath [if
+    the input tif frames are single tiffs] for caiman processing [as caiman does not accept single frame tiffs as
+    input*, in caiman 1.0].
 
         Args:
 
-            bfg: 1) string: one baseline tif
+            folder: 1) string: file path in which baseline frames (tifs) will reside
+
+            bfg: 1) string: one baseline tif name, in which all tif frames during the baseline will exist
                 2) tuple: (namescheme(e.g. online_{}.tiff), start, end(exclusive))
 
             cnm: OnAcid
                 the OnACID object being used
 
-            query_rate: float
-                used to calculate q_intv (query interval), which is
-                query_rate * (1 / fr)
-                fr: frame_rate in 'self.params.data'
-                query interval is the sleep time between two directory
-                check of new frames to save computation
+            batch_tif: int
+                number of mergetifs to be generated if criteria for merging tiffs are met
 
             view: boolean
                 flag for plotting the dynamic plots of the temporal
                 components
 
-            init_batch: int
-                number of frames to be processed during initialization
-
-            epochs: int
-                number of passes over the data
-
-            motion_correct: bool
-                flag for performing motion correction
+            debug: boolean
+                flag for printing out all files found by algorithm
 
             kwargs: dict
-                additional parameters used to modify self.params.online']
-                see options.['online'] for details
+                additional parameters used for the baseline process
+                outpath: string
+
 
         Returns:
             cnm: OnAcid Object
-            field updated:
+            Fields updated:
                 Ts: int
                     length of the total experiment
+
                 base: int
                     length of the baseline file
+
                 baseline: ndarray
                     array with dimension number_of_baseline components
-                base_proc: tuple
-                    data acquisition time, baseline process time
+
+                base_proc: list
+                    [data acquisition time, baseline process time]
+
+                t_online: list
+                    time for whole online processing process
+
+                t_shapes: list
+                    time for spatial component and shape processing
+
+                t_detect: list
+                    time for new component detection
+
+                t_motion: list
+                    time for motion correction
+
+                comp_update: list
+                    components updated at each frame
+
+                first_run: boolean
+                    the online_process can only be run once and this is the flag to ensure that.
             """
     bp0 = time.time()  # SET Breakpoint
     bp1 = bp0
@@ -161,12 +180,11 @@ def base_prepare(folder, bfg, cnm, view=False, debug=False, batch_tif=10, **kwar
     else:
         bfile, start, end = bfg, 0, 1
         bflag = None
-    # TODO: Define bfile outside of the loop, and only string format when found new bfile
     while start < end:
         bp2 = time.time()
-        if (bp2 - bp1) > counter_int:
+        if (bp2 - bp1) > SETTINGS.COUNTER_INTV:
             counter += 1
-            print("Time Since Start: {}h:{}m:{}s".format(*second_to_hmt(counter * counter_int)))
+            print("Time Since Start: {}h:{}m:{}s".format(*second_to_hmt(counter * SETTINGS.COUNTER_INTV)))
             if debug:
                 print("Last File {}".format(bfile))
             bp1 = bp2
@@ -209,7 +227,6 @@ def base_prepare(folder, bfg, cnm, view=False, debug=False, batch_tif=10, **kwar
     cnm.t_shapes = []
     cnm.t_detect = []
     cnm.t_motion = []
-    cnm.dtypes_min_max = [] # TODO: validation step, delete it afterwards
 
     max_shifts_online = cnm.params.get('online', 'max_shifts_online')
     if extra_files == 0:  # check whether there are any additional files
@@ -232,7 +249,6 @@ def base_prepare(folder, bfg, cnm, view=False, debug=False, batch_tif=10, **kwar
         old_comps = cnm.N  # number of existing components
         for frame_count, frame in enumerate(Y_):  # process each file
             t, old_comps = uno_proc(frame, cnm, t, old_comps, t_online, out, max_shifts_online)
-            # temp = cnm.estimates.C_on[cnm.params.get('init', 'nb'):cnm.M, t-1] # TODO: HERE FEEDS TO BMI
     dur0 = bp2-bp0
     dur = time.time() - bp0
     ha, ma, sa = second_to_hmt(dur0)
@@ -252,27 +268,21 @@ def base_prepare(folder, bfg, cnm, view=False, debug=False, batch_tif=10, **kwar
         cnm.estimates.plot_contours(img=Cn, display_numbers=False)
         # %% view components
         cnm.estimates.view_components(img=Cn)
-
-    # TODO: ADD CODE TO PROCESS THE REMAINING DATA IN BASELINE
     return cnm
 
 
-def online_process(folder, ns, ns_start, cnm, query_rate=0, view=False, timeout=10):
-    # TODO: ADD ABILITY TO CHANGE C_ON LENGTH ONLINE
-    """Implements the caiman online algorithm on baseline and on the online frames.
-        The taken in live as they populate the [folder].
-        Caiman online is initialized using the seeded or bare initialization
-        methods.
-
+def online_process(folder, ns, ns_start, cnm, query_rate=0, bmi=True, timeout=10):
+    """ Implements the real-time online processing pipeline using OnAcid. It takes the newly generated image frames
+    put in folder and update the components in accordance.
 
         Args:
 
             folder: str
-                the folder to which the frames would be populating
+                the folder to which frames [in the form of single tifs] from microscopes will go to
 
             ns:  str
-                the naming scheme of image frames, e.g. "frame_{0}.tif",
-                "{0}" is necessary for formating reasons
+                the naming scheme of image frames, e.g. "frame_{0}.tiff",
+                "{0}" is necessary for formating reasons, to signify a tiff file sequence
 
             ns_start: int
                 the starting frame number in the naming scheme, e.g.
@@ -349,8 +359,9 @@ def online_process(folder, ns, ns_start, cnm, query_rate=0, view=False, timeout=
                 t, old_comps = uno_proc(frame, cnm, t, old_comps, t_online, out, max_shifts_online)
                 bmistart = time.time()
                 ns_counter += 1
-                temp = cnm.estimates.C_on[cnm.params.get('init', 'nb'):cnm.M, t - cnm.params.get('bmi', 'dynamicLen'): t]
-                cnm.feed_to_bmi(temp)
+                if bmi:
+                    temp = cnm.estimates.C_on[cnm.params.get('init', 'nb'):cnm.M, t - cnm.params.get('bmi', 'dynamicLen'): t]
+                    cnm.feed_to_bmi(temp)
                 t_bmi.append(time.time()-bmistart)
                 waitstart = time.time()
             else:
@@ -391,7 +402,6 @@ def online_process(folder, ns, ns_start, cnm, query_rate=0, view=False, timeout=
 
 
 def uno_proc(frame, cnm, t, old_comps, t_online, out, max_shifts_online):
-    cnm.dtypes_min_max.append((frame.dtype, np.min(frame), np.max(frame)))
     t_frame_start = time.time()
     if np.isnan(np.sum(frame)):
         raise Exception('Frame ' + str(t) + ' contains NaN')
@@ -472,8 +482,8 @@ def vis_neuron(sigs, seq=None, save=False):
     rowlen = axes.shape[1]
     for i in range(len(axes)):
         for j, ax in enumerate(axes[i]):
-            ax.plot(sigs[i*rowlen+j])
-            ax.set_title(seq[0] + i*rowlen+j)
+            ax.plot(sigs[seq[i*rowlen+j]])
+            ax.set_title(seq[i*rowlen+j])
     if save:
         fig.savefig('neurons_{}_from{}to{}.png'.format(sigs.shape, seq[0], seq[-1]))
 
@@ -530,7 +540,10 @@ def close_online(cnm, data_root, folder, del_mergetif=True, **kwargs):
     if del_mergetif:
         for f in cnm.params.get('data', 'fnames'):
             if f.find("mergetif") != -1 and os.path.exists(f):
+                try:
                     os.remove(f)
+                except Exception as e:
+                    print("Unable to Delete File {}, because:\n {}".format(f, str(e)))
     cnm.save(os.path.join(log, savefil))
     print("Object successfully closed!")
 
@@ -553,40 +566,12 @@ def cnm_benchmark(cnm, data_root, folder, **kwargs):
     fp.create_dataset('t_bmi', data=cnm.t_bmi)
     fp.create_dataset('t_wait', data=cnm.t_wait)
     fp.attrs['t_full'] = cnm.t_full
+    fp.attrs['base_wait'] = cnm.base_proc[0]
+    fp.attrs['base_proc'] = cnm.base_proc[1]
     fp.create_dataset('C', data=cnm.estimates.C)
     fp.create_dataset('A', data=cnm.estimates.A)
+    recursively_save_dict_contents_to_group(fp, '/', cnm.params.bmi)
     fp.close()
-
-
-def analysis_time_contrast(t1, opt1, t2, opt2, savepath, draw_thres=True):
-    low1, high1 = min(min(t1), min(t2)) * 0.8, max(max(t1), max(t2)) * 1.1
-    linear1 = np.linspace(low1, high1)
-    olier = len(np.where(t2 > t1)[0])
-    fracless = np.round(olier / len(t2), 3)
-    plt.subplot(121)
-    plt.scatter(t1, t2, s=30, alpha=0.8, c=np.arange(len(t1)), cmap="coolwarm")
-    if draw_thres:
-        plt.plot(linear1, linear1, color='#FFD700')
-    plt.xlabel("t1_{} (s)".format(opt1))
-    plt.ylabel('t2_{} (s)'.format(opt2))
-    cbar = plt.colorbar()
-    cbar.set_label("Frame #")
-    plt.xlim((low1, high1))
-    plt.ylim((low1, high1))
-    plt.subplot(122)
-    sum1 = np.cumsum(t1)
-    sum2 = np.cumsum(t2)
-    low2, high2 = min(sum1[0], sum2[0]) * 0.8, max(sum1[-1], sum2[-1]) * 1.1
-    linear2 = np.linspace(low2, high2)
-    plt.plot(sum1, sum2)
-    plt.plot(linear2, linear2)
-    plt.xlabel("t1_{}".format(opt1))
-    plt.ylabel('t2_{}'.format(opt2))
-    plt.xlim((low2, high2))
-    plt.ylim((low2, high2))
-    plt.legend(['contrast', "y=x"])
-    plt.suptitle('# points t2 > t1: {}, fraction:{}'.format(olier, fracless))
-    plt.savefig(os.path.join(savepath, "{}_VS_{}.png".format(opt1, opt2)))
 
 
 def full_vs_t_thres(obj, t_thres, opt, savepath, online_dur, only_proc=False):
@@ -620,6 +605,21 @@ def ensemble_test(cnm, E1, E2, outpath=None, saveopt=None):
         fig.savefig(os.path.join(outpath, "Ensemble Neuron With Filters {}".format(saveopt)))
 
 
+def willdata():
+    out_root = '/Users/albertqu/Documents/7.Research/BMI/'
+    wdata = '/Users/albertqu/Documents/7.Research/BMI/WillData'
+    base_dur, online_dur = 100, 0
+    fs, base_flag=10,'test0.tif'
+    cnm = cnm_init(base_dur, online_dur, fs)
+    cnm = base_prepare(wdata, base_flag, cnm)
+    online_process(wdata, '{}.tif', 0, cnm, bmi=False)
+    plots = os.path.join(out_root, 'plots')
+    opt = 'willdata_dsf_4_snr_1.5'
+    #cnm_benchmark(cnm, out_root, wdata, saveopt=opt)
+    close_online(cnm, out_root, wdata, saveopt=opt)
+    full_vs_t_thres(cnm, 0.075, opt, plots, online_dur * fs)
+
+
 
 # %%
 def demo():
@@ -641,13 +641,15 @@ def demo():
     E1, E2 = [0, 1], [2, 3]
     pc, T1 = baselineSimulation(cnm, E1, E2)
     print("Recommending T1: {}, with {}% correct.".format(T1, pc))
-    set_up_bmi(cnm, E1, E2, T1)
+    set_up_bmi(cnm, E1, E2, T1, debug=True)
     online_process(fullseries, frame_ns, 0, cnm)
     opt = SETTINGS.OPT
     cnm_benchmark(cnm, out_root, fullseries, saveopt=opt)
     close_online(cnm, out_root, fullseries, saveopt=opt)
     os.system("""osascript -e 'display notification "Job Done" with title "{}"'""".format('pipeline'))
-    full_vs_t_thres(cnm, 0.075, opt, os.path.join(out_root, 'plots'), online_dur * fs)
+    plots = os.path.join(out_root, 'plots')
+    full_vs_t_thres(cnm, 0.075, opt, plots, online_dur * fs)
+    #ensemble_test(cnm, E1, E2, plots, opt)
     # TODO: ADD FUNCTION TO SAVE THE INDIVIDUAL TIFFS?
 
 

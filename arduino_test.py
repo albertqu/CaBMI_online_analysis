@@ -1,3 +1,5 @@
+__author__ = 'Albert Qu'
+
 import time, serial, nanpy
 
 

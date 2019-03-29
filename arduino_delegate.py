@@ -1,3 +1,5 @@
+___author__ = 'Albert Qu'
+
 import serial
 
 

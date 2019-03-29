@@ -329,6 +329,7 @@ def base_prepare_v2(folder, bfg, cnm, view=False):
     cnm.t_shapes = []
     cnm.t_detect = []
     cnm.t_motion = []
+    #cnm.dtypes_min_max = [] Validation steps
 
     max_shifts_online = cnm.params.get('online', 'max_shifts_online')
     if extra_files == 0:  # check whether there are any additional files
@@ -473,6 +474,7 @@ def online_process(folder, ns, ns_start, cnm, query_rate=0, view=False):
                 Ts: int
                     length of the total experiment
             """
+    # TODO: ADD ABILITY TO CHANGE C_ON LENGTH ONLINE
     # TODO: ADD A LENGTH OF EXPR
     fls = cnm.params.get('data', 'fnames')
     init_batch = cnm.params.get('online', 'init_batch')

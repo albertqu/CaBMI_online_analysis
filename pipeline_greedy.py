@@ -529,7 +529,7 @@ def demo():
     logfile = os.path.join(out_root, "online.log")
     ext, frame_ns = 'tif', "online_{}.tiff"
     basedir = os.path.join(data_root, SETTINGS.basedir)
-    base_dur, online_dur = 15 * 60, 15 * 60
+    base_dur, online_dur = 15 * 60, 15 * 60 * 4
     fs = 10 # DATA Framerate
     base_flag = 'online_{}.tiff', 0, base_dur * fs
     cnm = cnm_init(base_dur, online_dur, fs)
@@ -538,7 +538,7 @@ def demo():
     E1, E2 = [0, 1], [2, 3]
     pc, T1 = baselineSimulation(cnm, E1, E2)
     print("Recommending T1: {}, with {}% correct.".format(T1, pc))
-    set_up_bmi(cnm, E1, E2, T1)
+    set_up_bmi(cnm, E1, E2, T1, debug=True)
     online_process(fullseries, frame_ns, 0, cnm)
     opt = SETTINGS.OPT + '_greedy'
     cnm_benchmark(cnm, out_root, fullseries, saveopt=opt)

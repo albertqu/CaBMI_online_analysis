@@ -1,10 +1,9 @@
+__author__ = 'Albert Qu'
+
 import numpy as np
 import os, logging
 from skimage import io, exposure
 import tifffile
-
-
-counter_int = 5
 
 
 class DCache_Parallel:
@@ -119,10 +118,12 @@ class MemmapHandler:
         self.counter = 0
         self.totlen = dims[0]
         self.fshape = dims[1:]
-        self.batch = self.totlen // batch_tif
-        if self.batch is not None:
+        if batch_tif:
+            self.batch = self.totlen // batch_tif
             self.fnametif = os.path.join(outpath, fnametif)
             self.lastsave = 0
+        else:
+            self.batch = None
 
     def add_data(self, data, high_contrast=False):
         """change the length of data everytime there is a modification  if counter + 1 is integer multiple of batch
@@ -143,11 +144,14 @@ class MemmapHandler:
 
     def close(self, delete_mem=True):
         self.mem.flush()
+        del self.mem
         if delete_mem and os.path.exists(self.fnamemm):
-            os.remove(self.fnamemm)
+            try:
+                os.remove(self.fnamemm)
+            except Exception as e:
+                print("Unable to Delete File {}, because:\n {}".format(self.fnamemm, str(e)))
         if self.batch is not None:
             return [self.fnametif.format(i) for i in range((self.lastsave-1) // self.batch + 1)]
-        del self.mem
 
 
 def get_tif_size(fname):
