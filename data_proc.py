@@ -99,9 +99,12 @@ def merge_tiffs(fls, outpath, num=1, fmm='bigmem', tifn='mergetif{}.tif', order=
         else:
             io.imsave(fname, bigmem[chunklen * j: endpoint], plugin='tifffile')
     # Delete mmap
-    if del_mmap:
-        os.remove(fnamemm)
-        del bigmem
+    try:
+        if del_mmap:
+            os.remove(fnamemm)
+            del bigmem
+    except:
+        print("Error deleting mmap", fnamemm)
     return fnames
 
 
