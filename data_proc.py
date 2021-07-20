@@ -121,3 +121,8 @@ def demo():
     split_to_series(baseline, destF=destF, ns="base_{}.tiff")
     merged = merge_tiffs([os.path.join(destF.format(0), "base_{}.tiff".format(i)) for i in range(500)], destF)
 
+
+def merge_tiff_from_folder(input_folder, outpath):
+    merge_files = [os.path.join(input_folder, f) for f in os.listdir(input_folder) if ('.tif' in f)]
+    return merge_tiffs(merge_files, outpath, tifn=input_folder.split(os.path.sep)[-1]+'_merge{}.tif')
+    
